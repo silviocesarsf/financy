@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { parseRef } from '../../shared/utils/date';
 import { transactionsService } from './transactions.service';
 import {
   bulkCategorySchema,
   bulkDeleteSchema,
+  invoicePaymentSchema,
   listQuerySchema,
   transactionSchema,
   typeEnum,
@@ -20,6 +22,14 @@ transactionsRoutes.get('/suggest-category', async (req, res) => {
     .object({ description: z.string().min(2).max(255), type: typeEnum })
     .parse(req.query);
   res.json(await transactionsService.suggestCategory(req.userId, description, type));
+});
+
+transactionsRoutes.get('/invoice', async (req, res) => {
+  res.json(await transactionsService.invoice(req.userId, parseRef(String(req.query.month ?? ''))));
+});
+
+transactionsRoutes.post('/invoice/pay', async (req, res) => {
+  res.status(201).json(await transactionsService.payInvoice(req.userId, invoicePaymentSchema.parse(req.body)));
 });
 
 transactionsRoutes.get('/:id', async (req, res) => {

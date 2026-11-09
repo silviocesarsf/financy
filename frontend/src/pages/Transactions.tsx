@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowDownUp, ChevronLeft, ChevronRight, Plus, Search, SearchX, Tag, Trash2 } from 'lucide-react';
 import { api, qs } from '../lib/api';
-import { brl, cn, currentMonth, dateBR, monthBounds, PAYMENT_LABELS, SOURCE_LABELS } from '../lib/format';
+import { brl, cn, currentMonth, dateBR, monthBounds, monthShort, PAYMENT_LABELS, SOURCE_LABELS } from '../lib/format';
 import type { Transaction, TransactionList } from '../lib/types';
 import { useCategories, useDebounced, useInvalidateFinance } from '../hooks/queries';
 import { Badge, Card, Empty, PageHeader, Spinner } from '../components/ui/misc';
@@ -239,7 +239,7 @@ export function TransactionsPage() {
                     </td>
                     <td className="tabular py-3 text-zinc-600 dark:text-zinc-300">
                       {dateBR(t.purchaseDate ?? t.date)}
-                      {t.purchaseDate && <p className="text-[11px] text-zinc-400">fatura {dateBR(t.date).slice(0, 5)}</p>}
+                      {t.purchaseDate && <p className="text-[11px] text-zinc-400">fatura {monthShort(t.date.slice(0, 7))}</p>}
                     </td>
                     <td className="py-3 text-zinc-600 dark:text-zinc-300">{PAYMENT_LABELS[t.paymentMethod]}</td>
                     <td className={cn('tabular py-3 pr-5 text-right font-semibold', t.type === 'INCOME' && 'text-emerald-600 dark:text-emerald-400')}>

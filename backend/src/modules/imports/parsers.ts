@@ -2,7 +2,7 @@ import type { PaymentMethod, TransactionSource, TransactionType } from '@prisma/
 import { AppError } from '../../shared/errors';
 import { parseAmount } from '../../shared/utils/money';
 import { normalizeText, extractInstallment } from '../../shared/utils/text';
-import { pad2 } from '../../shared/utils/date';
+import { addMonths, pad2, parseDateOnly, refKey, refOf } from '../../shared/utils/date';
 
 export interface ParsedItem {
   date: string; // AAAA-MM-DD
@@ -23,6 +23,8 @@ export interface ParseResult {
   /** Fatura de cartão: itens contam no mês do vencimento (dueDate), não na data da compra. */
   isCardInvoice?: boolean;
   dueDate?: string | null;
+  /** Mês de competência da fatura (AAAA-MM): mês das compras, anterior ao vencimento. */
+  refMonth?: string | null;
 }
 
 /** Nubank nomeia a fatura como "Nubank_AAAA-MM-DD.csv" (data de vencimento). */
@@ -223,8 +225,11 @@ async function parseNubankPdf(buffer: Buffer): Promise<ParseResult> {
 
 export async function parseStatement(fileName: string, buffer: Buffer): Promise<ParseResult> {
   const result = await parseByFormat(fileName, buffer);
-  if (result.isCardInvoice && !result.dueDate) {
-    result.dueDate = dueDateFromFileName(fileName) ?? latestDate(result.items);
+  if (result.isCardInvoice) {
+    const due = result.dueDate ?? dueDateFromFileName(fileName);
+    result.dueDate = due ?? latestDate(result.items);
+    // vencimento em dez = compras de nov; sem vencimento conhecido, usa o mês da última compra
+    result.refMonth = due ? refKey(addMonths(refOf(parseDateOnly(due)), -1)) : (result.dueDate?.slice(0, 7) ?? null);
   }
   return result;
 }
