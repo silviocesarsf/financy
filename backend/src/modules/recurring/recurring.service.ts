@@ -5,12 +5,15 @@ import { AppError, notFound } from '../../shared/errors';
 import { CATEGORY_SELECT } from '../../shared/serializers';
 import { toNumber } from '../../shared/utils/money';
 import {
+  addMonths,
   currentRef,
   daysInMonth,
+  monthDiff,
   monthEnd,
   monthStart,
   parseDateOnly,
   refKey,
+  refOf,
   toDateOnly,
   type MonthRef,
 } from '../../shared/utils/date';
@@ -30,6 +33,9 @@ export const recurringSchema = z.object({
 });
 
 type RecurringInput = z.infer<typeof recurringSchema>;
+
+/** Opção do cadastro: lançar em todos os meses do início até o mês atual. */
+export const launchAllSchema = z.object({ launchAll: z.boolean().default(false) });
 
 const fingerprintOf = (id: string, ref: MonthRef) => `rec:${id}:${refKey(ref)}`;
 
@@ -109,6 +115,34 @@ export const recurringService = {
         fingerprint: fingerprintOf(r.id, ref),
       },
     });
+  },
+
+  /**
+   * Lança a recorrência em todos os meses ativos, do início até o mês atual (idempotente via fingerprint).
+   * Meses futuros ficam de fora: a previsão já projeta as recorrências e contaria em dobro.
+   */
+  async launchAll(userId: string, id: string) {
+    const r = await this.find(userId, id);
+    const now = currentRef();
+    const data = [];
+    for (let ref = refOf(r.startDate); monthDiff(ref, now) >= 0; ref = addMonths(ref, 1)) {
+      if (!isActiveIn(r, ref)) continue;
+      data.push({
+        userId,
+        type: r.type,
+        description: r.description,
+        amount: r.amount,
+        date: new Date(Date.UTC(ref.year, ref.month - 1, Math.min(r.dayOfMonth, daysInMonth(ref)))),
+        categoryId: r.categoryId,
+        paymentMethod: r.paymentMethod,
+        source: 'RECURRING' as const,
+        fingerprint: fingerprintOf(r.id, ref),
+      });
+    }
+    if (!data.length) return 0;
+    // meses já lançados são ignorados pelo índice único (userId, fingerprint)
+    const { count } = await prisma.transaction.createMany({ data, skipDuplicates: true });
+    return count;
   },
 
   async find(userId: string, id: string) {

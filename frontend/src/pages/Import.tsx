@@ -2,7 +2,7 @@ import { useRef, useState, type DragEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { CheckCircle2, FileUp, History, Trash2, Undo2 } from 'lucide-react';
 import { api } from '../lib/api';
-import { brl, cn, dateBR, SOURCE_LABELS } from '../lib/format';
+import { brl, cn, dateBR, shiftMonth, SOURCE_LABELS } from '../lib/format';
 import type { ImportBatch, ImportItem, ImportPreview } from '../lib/types';
 import { useCategories, useInvalidateFinance } from '../hooks/queries';
 import { Badge, Card, CardTitle, Empty, PageHeader } from '../components/ui/misc';
@@ -17,6 +17,7 @@ export function ImportPage() {
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [items, setItems] = useState<ImportItem[]>([]);
   const [dueDate, setDueDate] = useState('');
+  const [refMonth, setRefMonth] = useState('');
   const { data: categories = [] } = useCategories();
   const { data: history = [] } = useQuery({ queryKey: ['imports'], queryFn: () => api.get<ImportBatch[]>('/imports') });
 
@@ -30,6 +31,7 @@ export function ImportPage() {
       setPreview(p);
       setItems(p.items);
       setDueDate(p.dueDate ?? '');
+      setRefMonth(p.refMonth ?? '');
     },
     onError: (e: Error) => toast(e.message, 'error'),
   });
@@ -40,6 +42,7 @@ export function ImportPage() {
         fileName: preview!.fileName,
         source: preview!.source,
         dueDate: preview!.isCardInvoice && dueDate ? dueDate : null,
+        refMonth: preview!.isCardInvoice && refMonth ? refMonth : null,
         items: items
           .filter((i) => i.selected)
           .map(({ date, description, amount, type, paymentMethod, categoryId, installmentNumber, installmentTotal, fingerprint }) => ({
@@ -73,6 +76,7 @@ export function ImportPage() {
 
   const chosen = items.filter((i) => i.selected);
   const totalExpense = chosen.filter((i) => i.type === 'EXPENSE').reduce((a, i) => a + i.amount, 0);
+  const totalCredits = chosen.filter((i) => i.type === 'INCOME').reduce((a, i) => a + i.amount, 0);
   const allChecked = items.length > 0 && items.every((i) => i.selected);
 
   return (
@@ -154,14 +158,28 @@ export function ImportPage() {
             </div>
             <div className="flex flex-wrap items-end gap-2">
               {preview.isCardInvoice && (
-                <Field label="Vencimento da fatura" hint="As compras contam neste mês">
-                  <Input type="date" required className="h-10" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                </Field>
+                <>
+                  <Field label="Vencimento da fatura">
+                    <Input
+                      type="date"
+                      className="h-10"
+                      value={dueDate}
+                      onChange={(e) => {
+                        setDueDate(e.target.value);
+                        // competência padrão = mês anterior ao vencimento (mês das compras)
+                        if (e.target.value) setRefMonth(shiftMonth(e.target.value.slice(0, 7), -1));
+                      }}
+                    />
+                  </Field>
+                  <Field label="Mês da fatura" hint="As compras contam neste mês">
+                    <Input type="month" required className="h-10" value={refMonth} onChange={(e) => setRefMonth(e.target.value)} />
+                  </Field>
+                </>
               )}
               <Button variant="secondary" onClick={() => setPreview(null)}>
                 <Trash2 className="h-4 w-4" /> Descartar
               </Button>
-              <Button disabled={!chosen.length || (preview.isCardInvoice && !dueDate)} loading={confirmImport.isPending} onClick={() => confirmImport.mutate()}>
+              <Button disabled={!chosen.length || (preview.isCardInvoice && !refMonth)} loading={confirmImport.isPending} onClick={() => confirmImport.mutate()}>
                 <CheckCircle2 className="h-4 w-4" /> Importar {chosen.length}
               </Button>
             </div>
@@ -170,9 +188,10 @@ export function ImportPage() {
           {items.length === 0 ? (
             <Empty icon={FileUp} title="Nenhum lançamento encontrado no arquivo" />
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="max-h-[60vh] overflow-auto">
               <table className="w-full min-w-[720px] text-sm">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-white dark:bg-zinc-900">
                   <tr className="border-b border-zinc-100 text-left text-xs text-zinc-500 dark:border-zinc-800">
                     <th className="w-10 py-3 pl-5">
                       <input type="checkbox" className="accent-zinc-900" checked={allChecked} onChange={() => setItems((s) => s.map((i) => ({ ...i, selected: !allChecked })))} />
@@ -218,6 +237,21 @@ export function ImportPage() {
                 </tbody>
               </table>
             </div>
+            <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-1 border-t border-zinc-100 px-5 py-3 text-sm dark:border-zinc-800">
+              <span className="text-zinc-500">{chosen.length} selecionadas</span>
+              <span className="text-zinc-500">
+                Despesas <b className="tabular text-zinc-900 dark:text-zinc-100">{brl(totalExpense)}</b>
+              </span>
+              {totalCredits > 0 && (
+                <span className="text-zinc-500">
+                  Créditos <b className="tabular text-emerald-600 dark:text-emerald-400">− {brl(totalCredits)}</b>
+                </span>
+              )}
+              <span className="text-zinc-500">
+                Total <b className="tabular text-base text-zinc-900 dark:text-zinc-100">{brl(totalExpense - totalCredits)}</b>
+              </span>
+            </div>
+            </>
           )}
         </Card>
       )}

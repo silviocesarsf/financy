@@ -21,7 +21,16 @@ const blank = {
   active: true,
   startDate: todayISO(),
   endDate: '',
+  launchAll: false,
 };
+
+/** Meses do início (ou término, se antes) até o mês atual que receberiam lançamento. */
+function monthsToLaunch(startDate: string, endDate: string) {
+  if (!startDate) return 0;
+  const idx = (iso: string) => Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7));
+  const last = Math.min(idx(todayISO()), endDate ? idx(endDate) : Infinity);
+  return Math.max(0, last - idx(startDate) + 1);
+}
 
 export function RecurringPage() {
   const toast = useToast();
@@ -46,6 +55,7 @@ export function RecurringPage() {
             active: editing.active,
             startDate: editing.startDate,
             endDate: editing.endDate ?? '',
+            launchAll: false,
           }
         : blank,
     );
@@ -60,12 +70,12 @@ export function RecurringPage() {
         categoryId: form.categoryId || null,
         endDate: form.endDate || null,
       };
-      return editing ? api.put(`/recurring/${editing.id}`, body) : api.post('/recurring', body);
+      return editing ? api.put<{ launched: number }>(`/recurring/${editing.id}`, body) : api.post<{ launched: number }>('/recurring', body);
     },
-    onSuccess: async () => {
+    onSuccess: async (res) => {
       setOpen(false);
       await invalidate();
-      toast('Conta fixa salva');
+      toast(res?.launched ? `Conta fixa salva e lançada em ${res.launched} ${res.launched > 1 ? 'meses' : 'mês'}` : 'Conta fixa salva');
     },
     onError: (e: Error) => toast(e.message, 'error'),
   });
@@ -215,6 +225,31 @@ export function RecurringPage() {
             <input type="checkbox" className="accent-zinc-900" checked={form.active} onChange={(e) => set('active', e.target.checked)} />
             Ativa
           </label>
+          {form.active && monthsToLaunch(form.startDate, form.endDate) > 0 && (
+            <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-0.5 accent-zinc-900" checked={form.launchAll} onChange={(e) => set('launchAll', e.target.checked)} />
+                <span>
+                  Lançar em todos os meses até o mês atual ({monthsToLaunch(form.startDate, form.endDate)}{' '}
+                  {monthsToLaunch(form.startDate, form.endDate) > 1 ? 'meses' : 'mês'})
+                  <span className="block text-xs text-zinc-500">
+                    Meses já lançados são ignorados. Meses futuros não são lançados: as previsões já contam a conta fixa.
+                  </span>
+                </span>
+              </label>
+              {form.launchAll && (
+                <Field label="Lançar a partir de" hint="Ajusta também o início da conta fixa.">
+                  <Input
+                    type="month"
+                    required
+                    max={todayISO().slice(0, 7)}
+                    value={form.startDate.slice(0, 7)}
+                    onChange={(e) => e.target.value && set('startDate', `${e.target.value}-01`)}
+                  />
+                </Field>
+              )}
+            </div>
+          )}
         </form>
       </Modal>
     </>

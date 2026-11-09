@@ -71,8 +71,12 @@ export interface Dashboard {
     income: number;
     expense: number;
     balance: number;
+    previousIncome: number;
+    incomeChangePct: number | null;
     previousExpense: number;
     expenseChangePct: number | null;
+    /** mês futuro: valores projetados */
+    projected: boolean;
   };
   committed: {
     incomeBase: number;
@@ -80,10 +84,21 @@ export interface Dashboard {
     fixed: number;
     installments: number;
     installmentsProjected: number;
+    /** compras à vista no cartão (obrigação da fatura) */
+    card: number;
     total: number;
     pct: number;
+    free: number;
+    previousPct: number | null;
     spentPct: number;
     available: number;
+    usedPct: number;
+    status: { paid: number; pending: number; toLaunch: number; cardBillPaid: boolean } | null;
+  };
+  pace: {
+    budget: number | null;
+    projectedTotal: number | null;
+    dayOfMonth: number | null;
   };
   byCategory: {
     categoryId: string | null;
@@ -96,8 +111,8 @@ export interface Dashboard {
     budgetPct: number | null;
   }[];
   budgets: { categoryId: string; name: string; color: string; icon: string; spent: number; budget: number; pct: number }[];
-  daily: { day: number; total: number; cumulative: number }[];
-  trend: { month: string; income: number; expense: number }[];
+  daily: { day: number; total: number; cumulative: number | null; planned: number | null; budget: number | null }[];
+  trend: { month: string; income: number; expense: number; balance: number; projected: boolean }[];
   recent: Transaction[];
 }
 
@@ -159,12 +174,24 @@ export interface ImportItem {
   duplicate: boolean;
 }
 
+export interface Invoice {
+  month: string;
+  items: number;
+  expense: number;
+  credits: number;
+  total: number;
+  projectedInstallments: number;
+  payment: { id: string; date: string; amount: number; paymentMethod: PaymentMethod } | null;
+}
+
 export interface ImportPreview {
   fileName: string;
   source: Exclude<Source, 'MANUAL' | 'RECURRING'>;
   label: string;
   isCardInvoice: boolean;
   dueDate: string | null;
+  /** mês de competência sugerido (AAAA-MM) */
+  refMonth: string | null;
   items: ImportItem[];
 }
 

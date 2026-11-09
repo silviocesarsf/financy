@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react';
 import { CategoryIcon } from './CategoryIcon';
 import { brl, cn, dateShort, PAYMENT_LABELS } from '../lib/format';
 import type { Transaction } from '../lib/types';
 
-export function TransactionRow({ tx, onClick }: { tx: Transaction; onClick?: () => void }) {
+export function TransactionRow({ tx, onClick, badges }: { tx: Transaction; onClick?: () => void; badges?: ReactNode }) {
   return (
     <button
       onClick={onClick}
@@ -15,6 +16,7 @@ export function TransactionRow({ tx, onClick }: { tx: Transaction; onClick?: () 
           {tx.category?.name ?? 'Sem categoria'} · {dateShort(tx.purchaseDate ?? tx.date)} · {PAYMENT_LABELS[tx.paymentMethod]}
           {tx.installmentTotal && ` · ${tx.installmentNumber}/${tx.installmentTotal}`}
         </p>
+        {badges && <div className="mt-1 flex flex-wrap gap-1">{badges}</div>}
       </div>
       <span className={cn('tabular text-sm font-semibold', tx.type === 'INCOME' ? 'text-emerald-600 dark:text-emerald-400' : '')}>
         {tx.type === 'INCOME' ? '+' : '−'} {brl(tx.amount)}

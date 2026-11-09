@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { recurringSchema, recurringService } from './recurring.service';
+import { launchAllSchema, recurringSchema, recurringService } from './recurring.service';
 
 export const recurringRoutes = Router();
 
@@ -8,13 +8,19 @@ recurringRoutes.get('/', async (req, res) => {
 });
 
 recurringRoutes.post('/', async (req, res) => {
-  await recurringService.create(req.userId, recurringSchema.parse(req.body));
-  res.status(201).end();
+  const input = recurringSchema.parse(req.body);
+  const { launchAll } = launchAllSchema.parse(req.body);
+  const r = await recurringService.create(req.userId, input);
+  const launched = launchAll ? await recurringService.launchAll(req.userId, r.id) : 0;
+  res.status(201).json({ launched });
 });
 
 recurringRoutes.put('/:id', async (req, res) => {
-  await recurringService.update(req.userId, req.params.id, recurringSchema.parse(req.body));
-  res.status(204).end();
+  const input = recurringSchema.parse(req.body);
+  const { launchAll } = launchAllSchema.parse(req.body);
+  await recurringService.update(req.userId, req.params.id, input);
+  const launched = launchAll ? await recurringService.launchAll(req.userId, req.params.id) : 0;
+  res.json({ launched });
 });
 
 recurringRoutes.delete('/:id', async (req, res) => {

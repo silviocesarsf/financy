@@ -19,16 +19,25 @@ export interface OpenInstallment {
  * a mesma compra agrupada entre faturas mesmo que o valor da última parcela varie em centavos.
  */
 export async function installmentProjection(userId: string, from: MonthRef, to: MonthRef) {
-  const known = await prisma.transaction.findMany({
-    where: {
-      userId,
-      type: 'EXPENSE',
-      installmentTotal: { gt: 1 },
-      installmentNumber: { not: null },
-      date: { gte: monthStart(addMonths(from, -48)), lt: monthEnd(to) },
-    },
-    select: { description: true, amount: true, date: true, installmentNumber: true, installmentTotal: true },
-  });
+  const [known, lastInvoice] = await Promise.all([
+    prisma.transaction.findMany({
+      where: {
+        userId,
+        type: 'EXPENSE',
+        installmentTotal: { gt: 1 },
+        installmentNumber: { not: null },
+        date: { gte: monthStart(addMonths(from, -48)), lt: monthEnd(to) },
+      },
+      select: { description: true, amount: true, date: true, installmentNumber: true, installmentTotal: true, importBatchId: true },
+    }),
+    // última fatura de cartão importada
+    prisma.transaction.findFirst({
+      where: { userId, paymentMethod: 'CREDIT_CARD', importBatchId: { not: null } },
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    }),
+  ]);
+  const lastInvoiceRef = lastInvoice ? refOf(lastInvoice.date) : null;
 
   const latest = new Map<string, (typeof known)[number]>();
   for (const t of known) {
@@ -41,6 +50,8 @@ export async function installmentProjection(userId: string, from: MonthRef, to: 
   const byMonth = new Map<string, number>();
   const open: OpenInstallment[] = [];
   for (const t of latest.values()) {
+    // parcela importada que não veio numa fatura mais recente: compra estornada ou quitada antecipadamente
+    if (t.importBatchId && lastInvoiceRef && monthDiff(refOf(t.date), lastInvoiceRef) > 0) continue;
     const amount = toNumber(t.amount);
     const lastRef = refOf(t.date);
     const remaining = t.installmentTotal! - t.installmentNumber!;

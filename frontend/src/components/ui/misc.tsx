@@ -1,17 +1,47 @@
-import type { ReactNode } from 'react';
-import { Loader2, type LucideIcon } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Info, Loader2, type LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/format';
 
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
   return <div className={cn('card p-5', className)}>{children}</div>;
 }
 
-export function CardTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
+export function CardTitle({ children, action, info }: { children: ReactNode; action?: ReactNode; info?: ReactNode }) {
   return (
     <div className="mb-4 flex items-center justify-between gap-2">
-      <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{children}</h3>
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+        {children}
+        {info && <InfoTip>{info}</InfoTip>}
+      </h3>
       {action}
     </div>
+  );
+}
+
+/** Ícone "sobre" com explicação do bloco (hover no desktop, toque no celular). */
+export function InfoTip({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        aria-label="Sobre este bloco"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className="rounded-full p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          className="absolute top-full left-0 z-30 mt-1.5 w-72 max-w-[80vw] space-y-1.5 rounded-xl border border-zinc-200 bg-white p-3 text-xs leading-relaxed font-normal text-zinc-600 shadow-lg dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+        >
+          {children}
+        </span>
+      )}
+    </span>
   );
 }
 

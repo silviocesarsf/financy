@@ -30,6 +30,13 @@ export const listQuerySchema = z.object({
   order: z.enum(['asc', 'desc']).default('desc'),
 });
 
+export const invoicePaymentSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/, 'Mês deve estar no formato AAAA-MM'),
+  date: dateOnly,
+  amount: z.number().positive().max(100_000_000),
+  paymentMethod: paymentMethodEnum.exclude(['CREDIT_CARD']).default('PIX'),
+});
+
 export const bulkDeleteSchema = z.object({ ids: z.array(z.string()).min(1).max(500) });
 
 export const bulkCategorySchema = z.object({

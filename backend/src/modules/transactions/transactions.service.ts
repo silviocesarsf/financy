@@ -1,13 +1,17 @@
 import type { Prisma, TransactionType } from '@prisma/client';
 import type { z } from 'zod';
 import { notBillPayment, prisma } from '../../shared/prisma';
-import { notFound } from '../../shared/errors';
+import { AppError, notFound } from '../../shared/errors';
 import { CATEGORY_SELECT, serializeTransaction } from '../../shared/serializers';
 import { round2, toNumber } from '../../shared/utils/money';
-import { parseDateOnly } from '../../shared/utils/date';
+import { monthEnd, monthStart, pad2, parseDateOnly, parseRef, refKey, toDateOnly, type MonthRef } from '../../shared/utils/date';
 import { categoriesService } from '../categories/categories.service';
 import { buildCategorizer } from '../categories/categorizer';
-import type { bulkCategorySchema, listQuerySchema, transactionSchema } from './transactions.schemas';
+import { installmentProjection } from '../forecast/installments';
+import type { bulkCategorySchema, invoicePaymentSchema, listQuerySchema, transactionSchema } from './transactions.schemas';
+
+/** Pagamento de fatura idempotente por mês de competência. */
+export const billFingerprint = (ref: MonthRef) => `bill:${refKey(ref)}`;
 
 type TxInput = z.infer<typeof transactionSchema>;
 type ListQuery = z.infer<typeof listQuerySchema>;
@@ -149,5 +153,57 @@ export const transactionsService = {
   async suggestCategory(userId: string, description: string, type: TransactionType) {
     const categorize = await buildCategorizer(userId);
     return { categoryId: categorize(description, type) };
+  },
+
+  /** Fatura do cartão no mês de competência: compras − créditos/estornos, parcelas previstas e pagamento. */
+  async invoice(userId: string, ref: MonthRef) {
+    const where = {
+      userId,
+      paymentMethod: 'CREDIT_CARD' as const,
+      date: { gte: monthStart(ref), lt: monthEnd(ref) },
+      ...notBillPayment,
+    };
+    const [sums, payment, projection] = await Promise.all([
+      prisma.transaction.groupBy({ by: ['type'], where, _sum: { amount: true }, _count: { _all: true } }),
+      prisma.transaction.findUnique({ where: { userId_fingerprint: { userId, fingerprint: billFingerprint(ref) } } }),
+      installmentProjection(userId, ref, ref),
+    ]);
+    const sumOf = (t: TransactionType) => toNumber(sums.find((s) => s.type === t)?._sum.amount);
+    const expense = sumOf('EXPENSE');
+    const credits = sumOf('INCOME');
+    const projected = projection.byMonth.get(refKey(ref)) ?? 0;
+    return {
+      month: refKey(ref),
+      items: sums.reduce((a, s) => a + s._count._all, 0),
+      expense: round2(expense),
+      credits: round2(credits),
+      total: round2(expense - credits),
+      /** parcelas previstas ainda não lançadas (fatura não importada) */
+      projectedInstallments: round2(projected),
+      payment: payment
+        ? { id: payment.id, date: toDateOnly(payment.date), amount: toNumber(payment.amount), paymentMethod: payment.paymentMethod }
+        : null,
+    };
+  },
+
+  /** Registra o pagamento da fatura (um por mês). Fica fora dos totais: as compras já contam como despesa. */
+  async payInvoice(userId: string, input: z.infer<typeof invoicePaymentSchema>) {
+    const ref = parseRef(input.month);
+    const fingerprint = billFingerprint(ref);
+    const paid = await prisma.transaction.findUnique({ where: { userId_fingerprint: { userId, fingerprint } }, select: { id: true } });
+    if (paid) throw new AppError(409, 'Esta fatura já foi paga');
+    const tx = await prisma.transaction.create({
+      data: {
+        userId,
+        type: 'EXPENSE',
+        description: `Pagamento de fatura ${pad2(ref.month)}/${ref.year}`,
+        amount: input.amount,
+        date: parseDateOnly(input.date),
+        paymentMethod: input.paymentMethod,
+        fingerprint,
+      },
+      include: { category: { select: CATEGORY_SELECT } },
+    });
+    return serializeTransaction(tx);
   },
 };

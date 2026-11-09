@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { prisma } from '../../shared/prisma';
 import { notFound } from '../../shared/errors';
-import { parseDateOnly } from '../../shared/utils/date';
+import { daysInMonth, parseDateOnly, parseRef } from '../../shared/utils/date';
 import { descriptionKey } from '../../shared/utils/text';
 import { buildCategorizer } from '../categories/categorizer';
 import { paymentMethodEnum, typeEnum } from '../transactions/transactions.schemas';
@@ -13,6 +13,8 @@ export const confirmSchema = z.object({
   source: z.enum(['NUBANK_CARD_CSV', 'NUBANK_ACCOUNT_CSV', 'NUBANK_PDF', 'OFX']),
   /** Vencimento da fatura: quando informado, todos os itens contam neste mês (competência da fatura). */
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  /** Mês de competência da fatura (AAAA-MM); tem prioridade sobre o mês do vencimento. */
+  refMonth: z.string().regex(/^\d{4}-\d{2}$/).nullable().optional(),
   items: z
     .array(
       z.object({
@@ -30,6 +32,13 @@ export const confirmSchema = z.object({
     .min(1)
     .max(2000),
 });
+
+/** Data de competência: dia do vencimento (limitado ao fim do mês) dentro do mês da fatura. */
+function competenceDate(refMonth: string, dueDate: Date | null) {
+  const ref = parseRef(refMonth);
+  const day = Math.min(dueDate?.getUTCDate() ?? 1, daysInMonth(ref));
+  return new Date(Date.UTC(ref.year, ref.month - 1, day));
+}
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 40);
 
@@ -63,6 +72,7 @@ export const importsService = {
       label: parsed.label,
       isCardInvoice: !!parsed.isCardInvoice,
       dueDate: parsed.dueDate ?? null,
+      refMonth: parsed.refMonth ?? null,
       items: items.map((i) => ({ ...i, duplicate: dup.has(i.fingerprint), selected: i.selected && !dup.has(i.fingerprint) })),
     };
   },
@@ -73,6 +83,7 @@ export const importsService = {
     const ownedSet = new Set(owned.map((c) => c.id));
 
     const dueDate = input.dueDate ? parseDateOnly(input.dueDate) : null;
+    const competence = input.refMonth ? competenceDate(input.refMonth, dueDate) : dueDate;
 
     return prisma.$transaction(async (tx) => {
       const batch = await tx.importBatch.create({
@@ -86,8 +97,8 @@ export const importsService = {
           type: i.type,
           description: i.description,
           amount: i.amount,
-          date: dueDate ?? parseDateOnly(i.date),
-          purchaseDate: dueDate ? parseDateOnly(i.date) : null,
+          date: competence ?? parseDateOnly(i.date),
+          purchaseDate: competence ? parseDateOnly(i.date) : null,
           paymentMethod: i.paymentMethod,
           categoryId: i.categoryId && ownedSet.has(i.categoryId) ? i.categoryId : null,
           installmentNumber: i.installmentNumber,
