@@ -32,6 +32,7 @@ export const authService = {
   },
 
   async login(input: z.infer<typeof loginSchema>) {
+    console.log('login input', input);
     const user = await prisma.user.findUnique({ where: { email: input.email } });
     if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) {
       throw new AppError(401, 'E-mail ou senha inválidos');
